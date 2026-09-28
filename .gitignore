@@ -1,0 +1,9 @@
+.venv/
+data/
+checkpoints/
+reports/
+__pycache__/
+.ipynb_checkpoints/
+docs/
+AGENTS.md
+.github/

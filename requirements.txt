@@ -1,0 +1,12 @@
+# torch and torchvision are installed separately from the CUDA 12.6 index:
+# pip install torch torchvision --index-url https://download.pytorch.org/whl/cu126
+numpy
+pandas
+scikit-learn
+matplotlib
+seaborn
+pillow
+imagehash
+tqdm
+ipykernel
+jupyter
