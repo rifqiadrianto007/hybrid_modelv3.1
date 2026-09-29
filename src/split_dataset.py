@@ -17,7 +17,6 @@ LABEL_MAP = {
 }
 CLASS_NAMES = ["leaf_curl", "leaf_spot", "yellowish", "healthy_leaf"]
 
-
 def normalize_text(value: str) -> str:
     return " ".join(value.strip().lower().replace("_", " ").replace("-", " ").split())
 
@@ -160,6 +159,7 @@ def deduplicate(data: pd.DataFrame, threshold: int, warnings_list: list[str]) ->
     summary = {"clusters": sum(size > 1 for size in cluster_sizes), "dropped": len(data) - len(kept_indices), "largest_cluster": largest_cluster}
     return data.iloc[sorted(kept_indices)].copy().reset_index(drop=True), pd.DataFrame(reports, columns=report_columns), summary
 
+# fungsi 
 def allocate_per_class(data: pd.DataFrame, count: int, seed: int) -> tuple[pd.DataFrame, pd.DataFrame]:
     selected_groups: list[pd.DataFrame] = []
     quota_rows: list[dict[str, object]] = []
