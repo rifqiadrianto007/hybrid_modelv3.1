@@ -1,5 +1,4 @@
 from __future__ import annotations
-import argparse
 import hashlib
 from pathlib import Path
 import imagehash
@@ -16,6 +15,13 @@ LABEL_MAP = {
     "healthy leaf": "healthy_leaf",
 }
 CLASS_NAMES = ["leaf_curl", "leaf_spot", "yellowish", "healthy_leaf"]
+BASE_DIR = Path(__file__).resolve().parents[1]
+OUTPUT_DIR = BASE_DIR / "data" / "splits"
+TRAIN_RATIO = 0.70
+VALIDATION_RATIO = 0.15
+TEST_RATIO = 0.15
+SEED = 42
+DEDUP_THRESHOLD = 8
 
 def normalize_text(value: str) -> str:
     return " ".join(value.strip().lower().replace("_", " ").replace("-", " ").split())
@@ -159,34 +165,6 @@ def deduplicate(data: pd.DataFrame, threshold: int, warnings_list: list[str]) ->
     summary = {"clusters": sum(size > 1 for size in cluster_sizes), "dropped": len(data) - len(kept_indices), "largest_cluster": largest_cluster}
     return data.iloc[sorted(kept_indices)].copy().reset_index(drop=True), pd.DataFrame(reports, columns=report_columns), summary
 
-# fungsi 
-def allocate_per_class(data: pd.DataFrame, count: int, seed: int) -> tuple[pd.DataFrame, pd.DataFrame]:
-    selected_groups: list[pd.DataFrame] = []
-    quota_rows: list[dict[str, object]] = []
-    sources = list(SOURCE_MAP.values())
-    for class_index, label in enumerate(CLASS_NAMES):
-        class_data = data[data["label"] == label]
-        if len(class_data) < count:
-            raise ValueError(f"Kelas {label} hanya memiliki {len(class_data)} gambar, kurang dari --per-class {count}.")
-        source_counts = class_data["source"].value_counts().to_dict()
-        desired = {source: count * source_counts.get(source, 0) / len(class_data) for source in sources}
-        quotas = {source: min(int(desired[source]), source_counts.get(source, 0)) for source in sources}
-        remaining = count - sum(quotas.values())
-        while remaining:
-            candidates = [source for source in sources if quotas[source] < source_counts.get(source, 0)]
-            if not candidates:
-                raise ValueError(f"Tidak dapat mengalokasikan --per-class untuk kelas {label}.")
-            source = max(candidates, key=lambda item: (desired[item] - int(desired[item]), -sources.index(item)))
-            quotas[source] += 1
-            remaining -= 1
-        for source in sources:
-            source_data = class_data[class_data["source"] == source]
-            quota = quotas[source]
-            if quota:
-                selected_groups.append(source_data.sample(n=quota, random_state=seed + class_index))
-            quota_rows.append({"label": label, "source": source, "quota": quota, "available": len(source_data)})
-    return pd.concat(selected_groups, ignore_index=True), pd.DataFrame(quota_rows)
-
 def stratified_split(data: pd.DataFrame, test_size: float, seed: int, name: str, warnings_list: list[str]) -> tuple[pd.DataFrame, pd.DataFrame]:
     key = data["label"] + "|" + data["source"]
     stratify = key
@@ -205,23 +183,14 @@ def add_image_ids(data: pd.DataFrame) -> pd.DataFrame:
     return data
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Membuat manifest split dataset tanpa menyalin gambar.")
-    parser.add_argument("--tag", choices=["pilot"], required=True)
-    parser.add_argument("--per-class", type=int, default=None)
-
-    args = parser.parse_args()
-    if args.per_class is not None and args.per_class <= 0:
-        raise ValueError("--per-class harus lebih besar dari nol.")
-    ratios = [args.train_ratio, args.val_ratio, args.test_ratio]
+    ratios = [TRAIN_RATIO, VALIDATION_RATIO, TEST_RATIO]
     if any(ratio <= 0 for ratio in ratios) or abs(sum(ratios) - 1.0) > 1e-9:
         raise ValueError("train, validation, dan test ratio harus positif dan berjumlah 1.")
-    base_dir = Path(args.base_dir).resolve() if args.base_dir else Path(__file__).resolve().parents[1]
-    output_dir = base_dir / "data" / "splits" / args.tag
-    output_dir.mkdir(parents=True, exist_ok=True)
+    OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
     warnings_list: list[str] = []
 
-    data, skipped = collect_images(base_dir, warnings_list)
-    skipped_path = output_dir / "skipped.csv"
+    data, skipped = collect_images(BASE_DIR, warnings_list)
+    skipped_path = OUTPUT_DIR / "skipped.csv"
     if skipped.empty:
         skipped_path.unlink(missing_ok=True)
     else:
@@ -229,31 +198,26 @@ def main() -> None:
     if data.empty:
         raise ValueError("Tidak ditemukan gambar valid dalam struktur data/raw/{Primer,Sekunder}/{kelas}.")
     data = hash_images(data)
-    data, dedup_report, dedup_summary = deduplicate(data, args.dedup_threshold, warnings_list)
-    dedup_report_path = output_dir / "dedup_report.csv"
+    data, dedup_report, dedup_summary = deduplicate(data, DEDUP_THRESHOLD, warnings_list)
+    dedup_report_path = OUTPUT_DIR / "dedup_report.csv"
     if dedup_report.empty:
         dedup_report_path.unlink(missing_ok=True)
     else:
         dedup_report.to_csv(dedup_report_path, index=False)
     print(f"Dedup: {dedup_summary['clusters']} klaster, {dedup_summary['dropped']} dibuang, klaster terbesar {dedup_summary['largest_cluster']}")
 
-    if args.per_class is not None:
-        data, quota_table = allocate_per_class(data, args.per_class, args.seed)
-        print("Jatah kelas x source:")
-        print(quota_table.to_string(index=False))
-
     data = add_image_ids(data)
-    train_df, remainder_df = stratified_split(data, args.val_ratio + args.test_ratio, args.seed, "train-vs-sisa", warnings_list)
-    val_fraction = args.test_ratio / (args.val_ratio + args.test_ratio)
-    val_df, test_df = stratified_split(remainder_df, val_fraction, args.seed, "validation-vs-test", warnings_list)
+    train_df, remainder_df = stratified_split(data, VALIDATION_RATIO + TEST_RATIO, SEED, "train-vs-sisa", warnings_list)
+    val_fraction = TEST_RATIO / (VALIDATION_RATIO + TEST_RATIO)
+    val_df, test_df = stratified_split(remainder_df, val_fraction, SEED, "validation-vs-test", warnings_list)
     split_frames = {"train": train_df, "validation": val_df, "test": test_df}
     for split_name, split_df in split_frames.items():
         split_df = split_df.copy()
         split_df["split"] = split_name
         split_frames[split_name] = split_df
-        split_df[["image_id", "filepath", "label", "source", "split"]].to_csv(output_dir / f"{split_name}.csv", index=False)
+        split_df[["image_id", "filepath", "label", "source", "split"]].to_csv(OUTPUT_DIR / f"{split_name}.csv", index=False)
     all_data = pd.concat(split_frames.values(), ignore_index=True)
-    all_data[["image_id", "filepath", "label", "source", "split"]].to_csv(output_dir / "all_data.csv", index=False)
+    all_data[["image_id", "filepath", "label", "source", "split"]].to_csv(OUTPUT_DIR / "all_data.csv", index=False)
 
     image_ids = [set(frame["image_id"]) for frame in split_frames.values()]
     filepaths = [set(frame["filepath"]) for frame in split_frames.values()]
