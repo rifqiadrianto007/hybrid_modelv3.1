@@ -93,10 +93,10 @@ def run_determinism_check(manifests: dict[str, Path], base_dir: Path, crop_frac:
             raise AssertionError("Uji determinisme gagal: dua hasil preprocessing berbeda.")
 
 
-def save_montage(train_dir: Path, output_path: Path) -> None:
+def samples(train_dir: Path, output_path: Path) -> None:
     image_paths = sorted(train_dir.rglob("*.png"))
     if not image_paths:
-        raise ValueError("Tidak ada hasil train untuk dibuat montase.")
+        raise ValueError("Tidak ada hasil train untuk dibuat samples.")
     sample_count = min(12, len(image_paths))
     generator = np.random.default_rng(SEED)
     selected_indices = generator.choice(len(image_paths), size=sample_count, replace=False)
@@ -120,7 +120,6 @@ def save_montage(train_dir: Path, output_path: Path) -> None:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Preprocessing deterministic dari manifest CSV.")
-    parser.add_argument("--tag", choices=["pilot", "full"], required=True)
     parser.add_argument("--crop-frac", type=float, default=1.0)
     parser.add_argument("--base-dir", type=str, default=None)
     args = parser.parse_args()
@@ -128,7 +127,7 @@ def main() -> None:
         raise ValueError("--crop-frac harus lebih besar dari 0 dan paling besar 1.")
 
     base_dir = Path(args.base_dir).resolve() if args.base_dir else Path(__file__).resolve().parents[1]
-    split_root = base_dir / "data" / "splits" / args.tag
+    split_root = base_dir / "data" / "splits"
     output_root = base_dir / "data" / "processed"
     report_root = base_dir / "reports"
     manifests = {split: split_root / f"{split}.csv" for split in SPLITS}
@@ -151,16 +150,14 @@ def main() -> None:
         class_counts[split] = pd.read_csv(manifest_path)["label"].value_counts().sort_index().to_dict()
 
     montage_path = report_root / "figures" / "preprocess_samples.png"
-    save_montage(output_root / "train", montage_path)
+    samples(output_root / "train", montage_path)
     summary = {
-        "tag": args.tag,
         "crop_frac": args.crop_frac,
         "size": list(IMG_SIZE),
         "resample": "LANCZOS",
         "counts": counts,
         "class_counts": class_counts,
-        "deterministic": True,
-        "montage": montage_path.relative_to(base_dir).as_posix(),
+        "samples": montage_path.relative_to(base_dir).as_posix(),
     }
     summary_path = output_root / "preprocess_summary.json"
     summary_path.write_text(json.dumps(summary, indent=2), encoding="utf-8")
@@ -169,10 +166,8 @@ def main() -> None:
     for split in SPLITS:
         print(f"{split.capitalize():12}: {counts[split]}")
     print(f"Total        : {sum(counts.values())}")
-    print(f"Determinisme : lulus")
-    print(f"Montase      : {montage_path}")
+    print(f"Samples      : {montage_path}")
     print(f"Summary      : {summary_path}")
-
 
 if __name__ == "__main__":
     main()
