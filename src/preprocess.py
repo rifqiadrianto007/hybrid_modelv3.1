@@ -51,13 +51,11 @@ def file_digest(path: Path) -> str:
             digest.update(chunk)
     return digest.hexdigest()
 
-
 def directory_digests(directory: Path) -> dict[str, str]:
     return {
         path.relative_to(directory).as_posix(): file_digest(path)
         for path in sorted(directory.rglob("*.png"))
     }
-
 
 def verify_processed(manifest_path: Path, output_dir: Path) -> int:
     manifest = pd.read_csv(manifest_path)
@@ -80,7 +78,6 @@ def verify_processed(manifest_path: Path, output_dir: Path) -> int:
                 raise AssertionError(f"Format hasil tidak valid: {path} ({image.size}, {image.mode})")
     return len(actual_paths)
 
-
 def run_determinism_check(manifests: dict[str, Path], base_dir: Path, crop_frac: float) -> None:
     with tempfile.TemporaryDirectory(prefix="preprocess_determinism_") as temporary_dir:
         temporary_root = Path(temporary_dir)
@@ -91,7 +88,6 @@ def run_determinism_check(manifests: dict[str, Path], base_dir: Path, crop_frac:
             process_manifest(manifest_path, base_dir, second_root / split, crop_frac)
         if directory_digests(first_root) != directory_digests(second_root):
             raise AssertionError("Uji determinisme gagal: dua hasil preprocessing berbeda.")
-
 
 def samples(train_dir: Path, output_path: Path) -> None:
     image_paths = sorted(train_dir.rglob("*.png"))
@@ -116,7 +112,6 @@ def samples(train_dir: Path, output_path: Path) -> None:
     figure.tight_layout()
     figure.savefig(output_path, dpi=200)
     plt.close(figure)
-
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Preprocessing deterministic dari manifest CSV.")

@@ -10,3 +10,4 @@ imagehash
 tqdm
 ipykernel
 jupyter
+optuna
