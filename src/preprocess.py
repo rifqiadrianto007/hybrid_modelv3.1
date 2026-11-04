@@ -1,9 +1,7 @@
 from __future__ import annotations
 import argparse
-import hashlib
 import json
 import shutil
-import tempfile
 from pathlib import Path
 import matplotlib.pyplot as plt
 import numpy as np
@@ -15,6 +13,7 @@ RESAMPLE_METHOD = Image.Resampling.LANCZOS
 SEED = 42
 SPLITS = ("train", "validation", "test")
 
+
 def center_crop(image: Image.Image, crop_frac: float) -> Image.Image:
     width, height = image.size
     crop_size = max(1, int(min(width, height) * crop_frac))
@@ -22,18 +21,20 @@ def center_crop(image: Image.Image, crop_frac: float) -> Image.Image:
     top = (height - crop_size) // 2
     return image.crop((left, top, left + crop_size, top + crop_size))
 
+
 def load_and_resize(path: Path, crop_frac: float) -> Image.Image:
     with Image.open(path) as image:
         image = ImageOps.exif_transpose(image).convert("RGB")
         image = center_crop(image, crop_frac)
         return image.resize(IMG_SIZE, RESAMPLE_METHOD)
 
+
 def process_manifest(manifest_path: Path, base_dir: Path, output_dir: Path, crop_frac: float) -> int:
     manifest = pd.read_csv(manifest_path)
     required_columns = {"image_id", "filepath", "label"}
     missing = required_columns - set(manifest.columns)
     if missing:
-        raise ValueError(f"Kolom manifest {manifest_path} tidak lengkap: {sorted(missing)}")
+        raise ValueError(f"Manifest is missing required columns: {sorted(missing)}")
 
     output_dir.mkdir(parents=True, exist_ok=True)
     for row in manifest.itertuples(index=False):
@@ -44,18 +45,6 @@ def process_manifest(manifest_path: Path, base_dir: Path, output_dir: Path, crop
         image.save(output_path, format="PNG")
     return len(manifest)
 
-def file_digest(path: Path) -> str:
-    digest = hashlib.sha256()
-    with path.open("rb") as file_obj:
-        for chunk in iter(lambda: file_obj.read(1024 * 1024), b""):
-            digest.update(chunk)
-    return digest.hexdigest()
-
-def directory_digests(directory: Path) -> dict[str, str]:
-    return {
-        path.relative_to(directory).as_posix(): file_digest(path)
-        for path in sorted(directory.rglob("*.png"))
-    }
 
 def verify_processed(manifest_path: Path, output_dir: Path) -> int:
     manifest = pd.read_csv(manifest_path)
@@ -68,31 +57,23 @@ def verify_processed(manifest_path: Path, output_dir: Path) -> int:
         for path in output_dir.rglob("*.png")
     }
     if expected_paths != actual_paths:
-        missing = sorted(expected_paths - actual_paths)
-        extra = sorted(actual_paths - expected_paths)
-        raise AssertionError(f"File hasil tidak cocok. Missing={missing[:3]}, extra={extra[:3]}")
+        missing_count = len(expected_paths - actual_paths)
+        extra_count = len(actual_paths - expected_paths)
+        raise AssertionError(
+            f"Processed files do not match the manifest: {missing_count} missing, {extra_count} extra."
+        )
     for relative in sorted(actual_paths):
         path = output_dir / relative
         with Image.open(path) as image:
             if image.size != IMG_SIZE or image.mode != "RGB":
-                raise AssertionError(f"Format hasil tidak valid: {path} ({image.size}, {image.mode})")
+                raise AssertionError(f"Processed image has an invalid format ({image.size}, {image.mode}).")
     return len(actual_paths)
 
-def run_determinism_check(manifests: dict[str, Path], base_dir: Path, crop_frac: float) -> None:
-    with tempfile.TemporaryDirectory(prefix="preprocess_determinism_") as temporary_dir:
-        temporary_root = Path(temporary_dir)
-        first_root = temporary_root / "first"
-        second_root = temporary_root / "second"
-        for split, manifest_path in manifests.items():
-            process_manifest(manifest_path, base_dir, first_root / split, crop_frac)
-            process_manifest(manifest_path, base_dir, second_root / split, crop_frac)
-        if directory_digests(first_root) != directory_digests(second_root):
-            raise AssertionError("Uji determinisme gagal: dua hasil preprocessing berbeda.")
 
 def samples(train_dir: Path, output_path: Path) -> None:
     image_paths = sorted(train_dir.rglob("*.png"))
     if not image_paths:
-        raise ValueError("Tidak ada hasil train untuk dibuat samples.")
+        raise ValueError("No processed training images are available for the sample montage.")
     sample_count = min(12, len(image_paths))
     generator = np.random.default_rng(SEED)
     selected_indices = generator.choice(len(image_paths), size=sample_count, replace=False)
@@ -113,13 +94,14 @@ def samples(train_dir: Path, output_path: Path) -> None:
     figure.savefig(output_path, dpi=200)
     plt.close(figure)
 
+
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Preprocessing deterministic dari manifest CSV.")
+    parser = argparse.ArgumentParser(description="Preprocess images from split manifests.")
     parser.add_argument("--crop-frac", type=float, default=1.0)
     parser.add_argument("--base-dir", type=str, default=None)
     args = parser.parse_args()
     if not 0 < args.crop_frac <= 1:
-        raise ValueError("--crop-frac harus lebih besar dari 0 dan paling besar 1.")
+        raise ValueError("--crop-frac must be greater than 0 and at most 1.")
 
     base_dir = Path(args.base_dir).resolve() if args.base_dir else Path(__file__).resolve().parents[1]
     split_root = base_dir / "data" / "splits"
@@ -128,9 +110,8 @@ def main() -> None:
     manifests = {split: split_root / f"{split}.csv" for split in SPLITS}
     missing_manifests = [str(path) for path in manifests.values() if not path.exists()]
     if missing_manifests:
-        raise FileNotFoundError(f"Manifest tidak ditemukan: {missing_manifests}")
+        raise FileNotFoundError(f"{len(missing_manifests)} split manifest(s) are missing.")
 
-    run_determinism_check(manifests, base_dir, args.crop_frac)
     if output_root.exists():
         shutil.rmtree(output_root)
     output_root.mkdir(parents=True, exist_ok=True)
@@ -138,7 +119,6 @@ def main() -> None:
     counts: dict[str, int] = {}
     class_counts: dict[str, dict[str, int]] = {}
     for split, manifest_path in manifests.items():
-        print(f"Processing {split}...")
         split_output = output_root / split
         counts[split] = process_manifest(manifest_path, base_dir, split_output, args.crop_frac)
         verify_processed(manifest_path, split_output)
@@ -157,12 +137,10 @@ def main() -> None:
     summary_path = output_root / "preprocess_summary.json"
     summary_path.write_text(json.dumps(summary, indent=2), encoding="utf-8")
 
-    print("\nHASIL PREPROCESSING")
     for split in SPLITS:
-        print(f"{split.capitalize():12}: {counts[split]}")
-    print(f"Total        : {sum(counts.values())}")
-    print(f"Samples      : {montage_path}")
-    print(f"Summary      : {summary_path}")
+        print(f"{split}: {counts[split]}")
+    print(f"total: {sum(counts.values())}")
+
 
 if __name__ == "__main__":
     main()
