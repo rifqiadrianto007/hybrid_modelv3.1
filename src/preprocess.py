@@ -1,18 +1,17 @@
-from __future__ import annotations
-import argparse
-import json
-import shutil
-from pathlib import Path
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
+import argparse
+import json
+import shutil
+from __future__ import annotations
+from pathlib import Path
 from PIL import Image, ImageOps
 
 IMG_SIZE = (224, 224)
 RESAMPLE_METHOD = Image.Resampling.LANCZOS
 SEED = 42
 SPLITS = ("train", "validation", "test")
-
 
 def center_crop(image: Image.Image, crop_frac: float) -> Image.Image:
     width, height = image.size
@@ -21,13 +20,11 @@ def center_crop(image: Image.Image, crop_frac: float) -> Image.Image:
     top = (height - crop_size) // 2
     return image.crop((left, top, left + crop_size, top + crop_size))
 
-
 def load_and_resize(path: Path, crop_frac: float) -> Image.Image:
     with Image.open(path) as image:
         image = ImageOps.exif_transpose(image).convert("RGB")
         image = center_crop(image, crop_frac)
         return image.resize(IMG_SIZE, RESAMPLE_METHOD)
-
 
 def process_manifest(manifest_path: Path, base_dir: Path, output_dir: Path, crop_frac: float) -> int:
     manifest = pd.read_csv(manifest_path)
@@ -44,7 +41,6 @@ def process_manifest(manifest_path: Path, base_dir: Path, output_dir: Path, crop
         image = load_and_resize(source_path, crop_frac)
         image.save(output_path, format="PNG")
     return len(manifest)
-
 
 def verify_processed(manifest_path: Path, output_dir: Path) -> int:
     manifest = pd.read_csv(manifest_path)
@@ -69,7 +65,6 @@ def verify_processed(manifest_path: Path, output_dir: Path) -> int:
                 raise AssertionError(f"Processed image has an invalid format ({image.size}, {image.mode}).")
     return len(actual_paths)
 
-
 def samples(train_dir: Path, output_path: Path) -> None:
     image_paths = sorted(train_dir.rglob("*.png"))
     if not image_paths:
@@ -93,7 +88,6 @@ def samples(train_dir: Path, output_path: Path) -> None:
     figure.tight_layout()
     figure.savefig(output_path, dpi=200)
     plt.close(figure)
-
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Preprocess images from split manifests.")
@@ -140,7 +134,6 @@ def main() -> None:
     for split in SPLITS:
         print(f"{split}: {counts[split]}")
     print(f"total: {sum(counts.values())}")
-
 
 if __name__ == "__main__":
     main()
