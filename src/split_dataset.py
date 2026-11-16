@@ -1,10 +1,8 @@
-from __future__ import annotations
-
-import hashlib
-from pathlib import Path
-
 import imagehash
 import pandas as pd
+import hashlib
+from __future__ import annotations
+from pathlib import Path
 from PIL import Image, ImageOps
 from sklearn.model_selection import train_test_split
 
@@ -34,10 +32,8 @@ OUTPUT_COLUMNS = ["image_id", "filepath", "label", "source", "split"]
 def normalize_text(value: str) -> str:
     return " ".join(value.strip().lower().replace("_", " ").replace("-", " ").split())
 
-
 def relative_path(path: Path, base_dir: Path) -> str:
     return path.relative_to(base_dir).as_posix()
-
 
 def collect_images(base_dir: Path) -> tuple[pd.DataFrame, pd.DataFrame]:
     raw_dir = base_dir / "data" / "raw"
@@ -72,14 +68,12 @@ def collect_images(base_dir: Path) -> tuple[pd.DataFrame, pd.DataFrame]:
         })
     return pd.DataFrame(rows), pd.DataFrame(skipped, columns=["filepath", "reason"])
 
-
 def md5_file(path: Path) -> str:
     digest = hashlib.md5()
     with path.open("rb") as file_obj:
         for chunk in iter(lambda: file_obj.read(1024 * 1024), b""):
             digest.update(chunk)
     return digest.hexdigest()
-
 
 def calculate_hashes(path: Path) -> tuple[str, str, list[str]]:
     with Image.open(path) as image:
@@ -93,7 +87,6 @@ def calculate_hashes(path: Path) -> tuple[str, str, list[str]]:
                 variants.append(str(imagehash.phash(variant)))
         return md5_file(path), variants[0], variants
 
-
 def hash_images(data: pd.DataFrame) -> pd.DataFrame:
     records = []
     for row in data.itertuples(index=False):
@@ -103,7 +96,6 @@ def hash_images(data: pd.DataFrame) -> pd.DataFrame:
     result["_phash_int"] = result["phash"].map(lambda value: int(value, 16))
     result["_variants_int"] = result["variants"].map(lambda values: tuple(int(value, 16) for value in values))
     return result
-
 
 class UnionFind:
     def __init__(self, size: int) -> None:
@@ -120,11 +112,9 @@ class UnionFind:
         if left_root != right_root:
             self.parent[right_root] = left_root
 
-
 def pair_distance(first: pd.Series, second: pd.Series) -> int:
     second_hash = second["_phash_int"]
     return min((second_hash ^ candidate).bit_count() for candidate in first["_variants_int"])
-
 
 def deduplicate(data: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame, dict[str, int]]:
     if data.empty:
@@ -239,7 +229,6 @@ def deduplicate(data: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame, dict[st
     }
     return data.iloc[sorted(kept_indices)].copy().reset_index(drop=True), pd.DataFrame(reports, columns=REPORT_COLUMNS), summary
 
-
 def stratified_split(
     data: pd.DataFrame, test_size: float, seed: int
 ) -> tuple[pd.DataFrame, pd.DataFrame]:
@@ -252,17 +241,14 @@ def stratified_split(
     except ValueError:
         return train_test_split(data, test_size=test_size, random_state=seed, stratify=data["label"])
 
-
 def add_image_ids(data: pd.DataFrame) -> pd.DataFrame:
     data = data.copy()
     data["image_id"] = data["filepath"].map(lambda value: hashlib.sha1(value.encode("utf-8")).hexdigest())
     return data
 
-
 def print_table(title: str, table: pd.DataFrame) -> None:
     print(title)
     print(table.round(4).to_string())
-
 
 def main() -> None:
     ratios = [TRAIN_RATIO, VALIDATION_RATIO, TEST_RATIO]
@@ -323,7 +309,6 @@ def main() -> None:
     }]))
     if skipped.shape[0] or dedup_summary["ambiguous_removed"]:
         print(f"WARNING: {len(skipped)} skipped file(s); {dedup_summary['ambiguous_removed']} ambiguous image(s) removed.")
-
 
 if __name__ == "__main__":
     main()
