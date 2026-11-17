@@ -1,7 +1,8 @@
+from __future__ import annotations
+
+import hashlib
 import imagehash
 import pandas as pd
-import hashlib
-from __future__ import annotations
 from pathlib import Path
 from PIL import Image, ImageOps
 from sklearn.model_selection import train_test_split
